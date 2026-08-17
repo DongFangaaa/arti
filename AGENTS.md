@@ -6,3 +6,9 @@
 - Remove temporary rebuild and rollback files after successful validation.
 - After validation, commit the modified deliverables to the current Git repository and push the current branch to `origin`.
 - Never push an archive that fails validation. Report the failure and keep the last known-good repository version intact.
+
+# Document reading workflow
+
+- Before interpreting a PDF, Word, PowerPoint, or other supported document, first convert it to Markdown with Microsoft MarkItDown and use the generated Markdown as the primary text source.
+- Keep the generated Markdown beside the source document unless the task requires another location.
+- When page layout, diagrams, screenshots, tables, or other visual structure affects meaning, inspect the relevant original document pages in addition to the Markdown conversion.
