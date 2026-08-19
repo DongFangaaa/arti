@@ -1,0 +1,52 @@
+# =============================================================================
+# 视觉逻辑算法应用赛 — Podman / Docker Compose（host 网络）
+# =============================================================================
+# host 网络让容器直接访问宿主机的 Modbus TCP 设备（相机本机不连）。
+# 用法：
+#   podman-compose up -d
+#   podman-compose logs -f
+#   podman-compose down
+# =============================================================================
+
+services:
+  vision:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vision-app:2.4
+    container_name: vision-app
+
+    # host 网络：直接访问宿主机 Modbus TCP 设备
+    network_mode: host
+
+    # 不需要 TTY，但保留 stdin 便于调试
+    stdin_open: false
+    tty: false
+
+    # 退出策略：异常退出由 systemd / k8s 重启
+    restart: unless-stopped
+
+    environment:
+      # === 业务开关 ===
+      DUMMY_CAMERA: "1"           # 容器不接相机 → 启用 DummyCamera（循环播放测试图）
+      VISION_CONFIG: "/app/config/camera_config.yaml"
+      VISION_PLC_CONFIG: "/app/config/plc_config.yaml"
+
+      # === 日志 ===
+      PYTHONUNBUFFERED: "1"
+      LOG_LEVEL: "INFO"
+
+      # === ONNX 推理线程（按 CPU 核数调） ===
+      OMP_NUM_THREADS: "4"
+
+    # 挂载：把测试图目录挂进去（DummyCamera 才会用到；正式相机可省）
+    volumes:
+      - ./test_images:/app/test_images:ro
+      - ./data/captures:/app/data/captures
+
+    # 资源限制（按现场工控机调）
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 2G

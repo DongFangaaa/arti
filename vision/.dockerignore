@@ -1,0 +1,54 @@
+# =============================================================================
+# .dockerignore — 减小构建上下文，避免不必要的文件进入镜像
+# =============================================================================
+
+# ---- 海康 SDK（Linux 容器用不到）----
+MvImport/
+Dll/
+
+# ---- Python 缓存 ----
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ---- 训练 / 开发产物 ----
+*.pt
+*.pth
+*.onnx.bak
+runs/
+wandb/
+.cache/
+.ipynb_checkpoints/
+
+# ---- 数据 / 测试 ----
+data/captures/
+data/datasets/
+test_images/
+
+# ---- 文档 / 杂项 ----
+docs/
+*.md
+!deploy/README.md
+.vscode/
+.idea/
+
+# ---- 系统文件 ----
+.git/
+.gitignore
+.gitattributes
+
+# ---- PLC 程序（不在容器里跑）----
+src/plc/HMI界面/
+src/plc/主程序/
+src/plc/伺服控制/
+src/plc/视觉通讯/
+
+# ---- 测试脚本 ----
+test/
+
+# ---- 模型 ONNX（仅 best.onnx 需要）----
+models/*.pt
+models/*.pth
+models/README.md
+models/perf_template.md

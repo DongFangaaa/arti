@@ -1,0 +1,29 @@
+# =============================================================================
+# 相机参数配置（独立文件，便于现场调整相机而不动 vision/main 配置）
+# =============================================================================
+# 现场调试说明：
+#   - 曝光太亮/太暗 → 调 camera.exposure_time (μs)
+#   - 噪点太多 → 降低 camera.gain 或换 gaussian 去噪
+#   - 帧率不够 → 调 camera.frame_rate
+#   - 触发模式由 PLC 控制 → 改 camera.trigger_mode: "hardware"
+# =============================================================================
+
+camera:
+  ip: "192.168.3.35"           # 海康 G默认 IP（M现场 修改）
+  exposure_time: 8000          # μs
+  gain: 12.0                   # dB
+  frame_rate: 10.0             # fps
+  trigger_mode: "software"     # software | hardware
+  pixel_format: "BayerRG8"
+  roi:
+    enable: false
+    x: 0
+    y: 0
+    width: 720
+    height: 540
+
+model:
+  path: "../models/best.pt"     # 训练后权重
+  onnx_path: "../models/best.onnx"   # 部署用
+  imgsz: 224                    # cls 输入尺寸（不可改）
+  conf: 0.55                    # top-1 置信度阈值

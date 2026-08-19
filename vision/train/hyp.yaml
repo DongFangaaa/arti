@@ -1,0 +1,62 @@
+# =============================================================================
+# YOLOv11n-cls 训练超参数（缺陷分类版 v2.3）
+# =============================================================================
+# 适用于 YOLOv11n-cls / YOLOv11s-cls
+# =============================================================================
+
+# 任务
+task: classify            # 注意：是 classify 不是 detect
+mode: train
+model: yolov11n-cls.pt    # 预训练权重（cls 变体）
+data: train/dataset.yaml
+
+# ---------- 训练轮次 ----------
+epochs: 100
+batch: 32
+imgsz: 224                # cls 任务标准输入尺寸
+patience: 25
+save: true
+save_period: 10
+project: ../runs/classify
+name: defect_v23
+
+# ---------- 优化器 ----------
+optimizer: AdamW
+lr0: 0.001
+lrf: 0.01
+momentum: 0.937
+weight_decay: 0.0005
+warmup_epochs: 3.0
+warmup_momentum: 0.8
+warmup_bias_lr: 0.1
+
+# ---------- 数据增强（cls 任务增强更激进）----------
+hsv_h: 0.015
+hsv_s: 0.7
+hsv_v: 0.4
+degrees: 15.0
+translate: 0.1
+scale: 0.5
+shear: 5.0
+perspective: 0.0005
+flipud: 0.0                # 圆形铁片上下翻转会改变特征（轻微）→ 关闭
+fliplr: 0.5
+mosaic: 0.0               # cls 任务通常关闭 mosaic
+mixup: 0.2                # mixup 对分类很有效
+copy_paste: 0.0
+close_mosaic: 0            # cls 任务没有 mosaic 阶段
+
+# ---------- 损失（cls 任务专用）----------
+cls: 0.5
+# box / dfl 仅 detect 任务使用，cls 任务忽略
+
+# ---------- 验证 ----------
+val: true
+plots: true
+verbose: true
+
+# 标签平滑（提升泛化）
+label_smoothing: 0.1
+
+# dropout
+dropout: 0.0

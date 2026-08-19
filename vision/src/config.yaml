@@ -1,0 +1,122 @@
+# =============================================================================
+# 视觉逻辑算法应用赛 — 视觉端配置文件（缺陷分类版 v2.3 — cls 架构）
+# =============================================================================
+# 使用说明：
+#   1. 现场部署前根据设备实测修改 IP / 端口 / 相机参数
+#   2. 类别顺序必须与 train/dataset.yaml 的 names 一致
+#   3. plc_defect_id 与 PLC 工程师约定的 defect_id 完全一致
+# =============================================================================
+
+project:
+  name: "VisualLogic_Defect_v2.3"
+  version: "2.3"
+  mode: "production"   # production | debug
+
+# ---------- 相机（海康 GigE）----------
+camera:
+  ip: "192.168.3.35"
+  exposure_time: 8000          # μs，实测调参
+  gain: 12.0                   # dB
+  frame_rate: 10.0             # fps
+  trigger_mode: "software"     # software | hardware
+  pixel_format: "BayerRG8"
+  roi:
+    enable: false
+    x: 0
+    y: 0
+    width: 720
+    height: 540
+
+# ---------- 像素 → 物理坐标（cls 任务通常不需要，留默认）----------
+pixel_to_mm:
+  enable: false
+  scale_x: 0.085
+  scale_y: 0.085
+  origin_x: 360
+  origin_y: 270
+  rotation_deg: 0.0
+
+# ---------- 模型（YOLOv11n-cls）----------
+model:
+  path: "../models/best.pt"
+  onnx_path: "../models/best.onnx"   # 部署用
+  device: "cpu"                       # cpu | cuda:0
+  imgsz: 224                          # cls 标准输入
+  conf: 0.55                          # top-1 置信度阈值（<此值报 fail_safe）
+  warmup: true
+
+# ---------- 缺陷类别（必须与 train/dataset.yaml 一致）----------
+classes:
+  names: ["scratch", "stain", "chip", "hole"]
+  count: 4
+  # 与 PLC defect_id 的映射（+1 偏移，空出 0 作 fail_safe）：
+  #   scratch→3, stain→4, chip→2, hole→1
+  plc_defect_id:
+    scratch: 3
+    stain:   4
+    chip:    2
+    hole:    1
+
+# ---------- 通讯（默认 Modbus TCP，赛题要求 TCP 协议）----------
+plc:
+  protocol: "modbus_tcp"       # modbus_tcp（推荐）| modbus_udp
+  modbus_tcp:
+    host: "192.168.3.99"          # PLC IP
+    port: 502                  # Modbus TCP 标准端口
+    unit_id: 1                 # Modbus 从站号（PLC 端需配相同）
+    timeout_s: 2.0
+    # 寄存器映射（保持寄存寄存器 Holding Register）
+    registers:
+      trigger: 100             # PLC→Vision：触发视觉（0/1）
+      defect_class: 110        # Vision→PLC：1=hole, 2=notch, 3=scratch, 4=stain, 0=未识别（+1 偏移）
+      confidence: 111          # Vision→PLC：0.0~1.0 → 0~1000 整数
+      valid: 112               # Vision→PLC：有效结果（0/1）
+      seq: 113                 # Vision→PLC：序列号
+  modbus_udp:
+    host: "127.0.0.1"
+    port: 502
+    unit_id: 1
+    timeout_s: 2.0
+    registers:
+      trigger: 100
+      defect_class: 110
+      confidence: 111
+      valid: 112
+      seq: 113
+
+# ---------- 图像预处理 ----------
+preprocess:
+  enable: true
+  mode: "legacy"               # legacy（去噪 + CLAHE）
+  # 当前配置：fastNlMeans 去噪 + CLAHE（clip=4.0）+ 关闭 USM 锐化
+  # 验证 100% 准确率（test/ 120 张测试集）
+  # USM 锐化实测会掉准（scratch 误判 notch），所以关闭
+
+  denoise: "fastNlMeans"       # fastNlMeans | gaussian | none
+  denoise_strength: 5          # h 参数（fastNlMeans），建议 3~7
+
+  clahe: true                  # ✅ 恢复（用户决定，验证 100% 准确率）
+  clahe_clip: 4.0              # CLAHE clipLimit，建议 2.0~6.0
+  clahe_tile: 8                # tileGridSize
+
+  gamma: 1.0                   # legacy 默认 1.0（不变）
+
+  sharpen: false               # ⚠️ 关闭（用户决定）
+  sharpen_amount: 0.5          # 锐化强度（仅当 sharpen=true 时生效）
+  sharpen_radius: 1.0          # 高斯模糊半径
+
+# ---------- 日志 ----------
+logging:
+  level: "INFO"
+  dir: "./logs"
+  save_debug_image: true
+  debug_image_dir: "./logs/debug_images"
+
+# ---------- 异常处理 ----------
+runtime:
+  vision_timeout_ms: 1000
+  camera_retry: 3
+  inference_retry: 2
+  fail_safe_defect: 0          # 视觉失败时上报的类别（0=未识别，PLC 端约定为"哨兵值"）
+  dummy_camera: false          # true: 使用 DummyCamera（无硬件演示）
+  dummy_image_dir: "./demo_images"

@@ -1,0 +1,38 @@
+# =============================================================================
+# YOLO 分类数据集配置（缺陷分类版 v2.3 — cls 架构）
+# =============================================================================
+# 数据集目录结构（YOLO-cls 标准）：
+#
+#   data/
+#   ├── train/
+#   │   ├── scratch/*.png
+#   │   ├── stain/*.png
+#   │   ├── chip/*.png
+#   │   └── hole/*.png
+#   ├── val/
+#   │   ├── scratch/...
+#   │   ├── stain/...
+#   │   ├── chip/...
+#   │   └── hole/...
+#   └── test/
+#       └── ...
+#
+# 类别顺序（与 vision/config.yaml 的 classes.names 完全一致）
+# =============================================================================
+
+# 路径以本仓库根目录为基准
+path: ../data
+train: train
+val: val
+test: test
+
+# 类别（必须与 vision/config.yaml 一致）
+# 顺序即 class id: 0=scratch, 1=stain, 2=chip, 3=hole
+names:
+  0: scratch                 # 划痕
+  1: stain                   # 污渍
+  2: chip                    # 缺角
+  3: hole                    # 孔洞
+
+# 缺陷 → PLC defect_id 映射（仅文档说明，训练时不会使用）
+# scratch → 1, stain → 2, chip → 3, hole → 4

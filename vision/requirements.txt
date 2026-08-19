@@ -1,0 +1,36 @@
+# =============================================================================
+# 视觉逻辑算法应用赛 — Python 依赖（PC 端开发 / 训练）
+# =============================================================================
+# 用法：
+#   pip install -r requirements.txt
+#
+# 容器内精简版见 deploy/requirements.runtime.txt（仅 ONNX 推理，不含 torch）
+# =============================================================================
+
+# ---------- 基础 ----------
+numpy>=1.26,<2.0
+opencv-python>=4.8
+PyYAML>=6.0
+pydantic>=2.6
+
+# ---------- 训练 ----------
+ultralytics>=8.2          # YOLOv11
+torch>=2.1                # 训练时按需安装；CPU/GPU 自适应
+torchvision>=0.16
+
+# ---------- ONNX 导出 / 推理 ----------
+onnx>=1.15
+onnxruntime>=1.17
+
+# ---------- 通讯 ----------
+pymodbus>=3.6
+
+# ---------- 可视化 / 测试 ----------
+matplotlib>=3.7
+seaborn>=0.13
+
+# ---------- 海康相机（按现场安装 wheel）----------
+# HikRobot MVS Python wheel 安装方式：
+#   pip install /path/to/MVS-3.x.x.x-Python.whl
+# 安装后 `from MvImport.MvCameraControl_class import MvCamera` 才可用。
+# 不在此列出，因为 wheel 路径由本地安装提供。

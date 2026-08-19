@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ============================================================================
+  PLCnext eHMI 界面定义 — 占位文件（实际由 PLC 工程师在 PLCnext Engineer 中创建）
+  ============================================================================
+  本文件为 .vis 占位参考。真实 eHMI 在 PLCnext Engineer 中拖拽生成。
+
+  关联的 OPC UA 变量 / 寄存器变量：
+    - xVisionTrigger     (HR100)  PLC→Vision
+    - xDefectClass       (HR110)  Vision→PLC
+    - fConfidence        (HR111)
+    - xResultValid       (HR112)
+    - iResultSeq         (HR113)
+    - state              (Main.prg 中的状态机变量)
+    - processed_count    (已处理的物料数)
+    - cur_x / cur_y / cur_z (当前三轴位置)
+    - alarm_code         (报警码)
+  ============================================================================
+-->
+<ViHmi>
+  <Title>视觉分拣系统</Title>
+  <Layout>
+
+    <!-- 顶部状态栏 -->
+    <Group Name="status">
+      <Label Name="state_lbl" Text="系统状态：${state_text}"/>
+      <Label Name="count_lbl" Text="已处理：${processed_count}/12"/>
+      <Label Name="seq_lbl" Text="视觉Seq：${iResultSeq}"/>
+    </Group>
+
+    <!-- 当前视觉识别结果 -->
+    <Group Name="vision_result">
+      <Label Name="defect_lbl" Text="识别结果：${defect_text}"/>
+      <Label Name="conf_lbl" Text="置信度：${confidence_pct}%"/>
+      <Indicator Name="valid_ind" Text="结果有效" Value="${xResultValid}"/>
+    </Group>
+
+    <!-- 三轴位置 -->
+    <Group Name="axes">
+      <Label Name="x_lbl" Text="X：${cur_x} mm"/>
+      <Label Name="y_lbl" Text="Y：${cur_y} mm"/>
+      <Label Name="z_lbl" Text="Z：${cur_z} mm"/>
+    </Group>
+
+    <!-- 货架可视化（4 列 × 3 层 = 12 库位）-->
+    <Group Name="shelf">
+      <Label Name="shelf_title" Text="货架状态"/>
+      <!-- 每列库位状态用颜色块表示已占用/空闲 -->
+      <!-- col1 (hole) -->
+      <Cell Name="c1r1" Col="1" Row="1" Value="${col1_row1_filled}"/>
+      <Cell Name="c1r2" Col="1" Row="2" Value="${col1_row2_filled}"/>
+      <Cell Name="c1r3" Col="1" Row="3" Value="${col1_row3_filled}"/>
+      <!-- col2 (chip) -->
+      <Cell Name="c2r1" Col="2" Row="1" Value="${col2_row1_filled}"/>
+      <Cell Name="c2r2" Col="2" Row="2" Value="${col2_row2_filled}"/>
+      <Cell Name="c2r3" Col="2" Row="3" Value="${col2_row3_filled}"/>
+      <!-- col3 (scratch) -->
+      <Cell Name="c3r1" Col="3" Row="1" Value="${col3_row1_filled}"/>
+      <Cell Name="c3r2" Col="3" Row="2" Value="${col3_row2_filled}"/>
+      <Cell Name="c3r3" Col="3" Row="3" Value="${col3_row3_filled}"/>
+      <!-- col4 (stain) -->
+      <Cell Name="c4r1" Col="4" Row="1" Value="${col4_row1_filled}"/>
+      <Cell Name="c4r2" Col="4" Row="2" Value="${col4_row2_filled}"/>
+      <Cell Name="c4r3" Col="4" Row="3" Value="${col4_row3_filled}"/>
+    </Group>
+
+    <!-- 报警指示 -->
+    <Group Name="alarm">
+      <Alarm Name="alarm_lamp" Code="${alarm_code}" Active="${alarm_active}"/>
+    </Group>
+
+    <!-- 控制按钮（操作员用）-->
+    <Group Name="controls">
+      <Button Name="btn_start" Text="启动" Action="start"/>
+      <Button Name="btn_stop" Text="停止" Action="stop"/>
+      <Button Name="btn_reset" Text="复位" Action="reset"/>
+    </Group>
+
+  </Layout>
+</ViHmi>
+<!--
+  ============================================================================
+  实际实现说明：
+  1. PLC 工程师在 PLCnext Engineer 中创建新 .vis 项目
+  2. 拖拽上述元素（Label / Indicator / Cell / Alarm / Button）
+  3. 把每个元素的 Value 绑定到对应的 OPC UA 变量 / 寄存器变量
+  4. 编译并下载到 EPC 1502
+  5. 启动 eHMI 服务（PLCnext 内置）
+  ============================================================================
+-->
