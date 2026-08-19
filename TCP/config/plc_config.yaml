@@ -1,0 +1,24 @@
+# =============================================================================
+# PLC 通讯配置（独立文件，便于现场调 PLC 而不动 vision/main 配置）
+# =============================================================================
+# 现场调试说明：
+#   - EPC IP 变化 → 改 plc.modbus_tcp.host
+#   - Modbus 端口冲突 → 改 plc.modbus_tcp.port
+#   - 从站号不一致 → 改 plc.modbus_tcp.unit_id（与 PLC 工程师对齐）
+#   - 寄存器地址不一致 → 改 plc.modbus_tcp.registers.*（与 PLC 工程师对齐）
+# =============================================================================
+
+plc:
+  protocol: "modbus_tcp"
+  modbus_tcp:
+    host: "192.168.3.99"          # PLC IP
+    port: 502                  # Modbus TCP 标准端口
+    unit_id: 1                 # Modbus 从站号（PLC 端需配相同）
+    timeout_s: 2.0
+    # 寄存器映射（保持寄存寄存器 Holding Register）
+    registers:
+      trigger: 100             # PLC→Vision：触发视觉（0/1）
+      defect_class: 110        # Vision→PLC：0=hole, 1=chip, 2=scratch, 3=stain
+      confidence: 111          # Vision→PLC：0.0~1.0 → 0~1000 整数
+      valid: 112               # Vision→PLC：有效结果（0/1）
+      seq: 113                 # Vision→PLC：序列号
