@@ -10,6 +10,9 @@ Python -> PLC：
     S1E\n ~ S4E\n  发送识别到的目标组号
 """
 
+"""
+TCP的调用接口
+"""
 from __future__ import annotations
 
 import socket
