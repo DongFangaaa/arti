@@ -83,6 +83,10 @@ class VisionApp:
         self.comm: TCP | None = None
         self.live_view: CameraLiveView | None = None
         self._camera_lock = threading.RLock()
+        self._inference_lock = threading.Lock()
+        self._manual_yolo_enabled = threading.Event()
+        self._shutdown_event = threading.Event()
+        self._manual_yolo_thread: threading.Thread | None = None
         self._running = False
         self._detecting = False    # PLC S1E 启动 / S0E 停止
 
@@ -125,6 +129,20 @@ class VisionApp:
         # 3) 缺陷分类模型
         self.detector = DefectClassifier(self.cfg, self.logger)
 
+        # 网页手动 YOLO 只更新预览，不发送 PLC 分类包。
+        if with_comm and self.live_view is not None:
+            self.live_view.set_yolo_controls(
+                self.start_manual_yolo,
+                self.stop_manual_yolo,
+                self.manual_yolo_running,
+            )
+            self._manual_yolo_thread = threading.Thread(
+                target=self._manual_yolo_loop,
+                name="manual-yolo-preview",
+                daemon=True,
+            )
+            self._manual_yolo_thread.start()
+
         # 4) PLC 通讯（TCP 帧协议，服务端模式；--once 调试可跳过）
         if with_comm:
             self.comm = TCP(self.cfg.tcp_host, self.cfg.tcp_port)
@@ -135,8 +153,52 @@ class VisionApp:
         image = self.preprocessor.run(raw_image)
         if image.ndim == 2:
             image = np.stack([image, image, image], axis=-1)
-        result = self.detector.detect(image, run_options=run_options)
+        with self._inference_lock:
+            result = self.detector.detect(image, run_options=run_options)
         return image, result
+
+    def start_manual_yolo(self) -> None:
+        self._manual_yolo_enabled.set()
+        self.logger.info("网页手动 YOLO 已启动（仅更新预览，不发送 PLC）")
+
+    def stop_manual_yolo(self) -> None:
+        self._manual_yolo_enabled.clear()
+        if self.live_view is not None:
+            self.live_view.clear_detection()
+        self.logger.info("网页手动 YOLO 已关闭")
+
+    def manual_yolo_running(self) -> bool:
+        return self._manual_yolo_enabled.is_set()
+
+    def _manual_yolo_loop(self) -> None:
+        """网页手动识别循环；PLC 正式识别始终优先。"""
+        while not self._shutdown_event.is_set():
+            if not self._manual_yolo_enabled.wait(timeout=0.2):
+                continue
+            if self._detecting or self.live_view is None:
+                self._shutdown_event.wait(0.1)
+                continue
+            frame = self.live_view.get_latest_frame()
+            if frame is None:
+                self._shutdown_event.wait(0.1)
+                continue
+            try:
+                _, result = self._recognize_frame(frame, run_options=None)
+                valid = result.cls_name != "none" and result.conf >= self.cfg.conf
+                group = (self.detector.to_plc_group_id(result.cls_name)
+                         if valid else None)
+                self.live_view.update_detection(
+                    frame, result, group=group, valid=valid)
+                self.logger.info(
+                    "网页手动 YOLO: cls=%s conf=%.4f group=%s valid=%s",
+                    result.cls_name, result.conf, group, valid)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.exception("网页手动 YOLO 推理失败: %s", exc)
+            # 推理结束后留出短间隔，同时让关闭按钮快速生效。
+            for _ in range(5):
+                if (self._shutdown_event.wait(0.1)
+                        or not self._manual_yolo_enabled.is_set()):
+                    break
 
     def _detect_and_send(self) -> dict:
         """抓取一张最新图片并识别；3秒无结果时终止推理并等待重拍。"""
@@ -295,6 +357,13 @@ class VisionApp:
                 while self._running:
                     cmd = self.comm.receive(timeout=self.cfg.tcp_cmd_timeout_s)
                     if cmd == CMD_START:
+                        if self._manual_yolo_enabled.is_set():
+                            self._manual_yolo_enabled.clear()
+                            self.logger.info("PLC 正式识别启动，已自动暂停网页手动 YOLO")
+                            # 等待正在执行的最后一次网页推理退出，再开始 PLC
+                            # 的3秒计时，避免手动模式占用模型导致正式识别超时。
+                            with self._inference_lock:
+                                pass
                         if not self._detecting:
                             self.logger.info("收到启动指令 S1E，开始检测")
                         self._detecting = True
@@ -322,6 +391,11 @@ class VisionApp:
         self._running = False
 
     def shutdown(self) -> None:
+        self._manual_yolo_enabled.clear()
+        self._shutdown_event.set()
+        if (self._manual_yolo_thread is not None
+                and self._manual_yolo_thread.is_alive()):
+            self._manual_yolo_thread.join(timeout=3.5)
         if self.live_view is not None:
             try:
                 self.live_view.stop()
