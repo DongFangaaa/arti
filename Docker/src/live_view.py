@@ -50,7 +50,7 @@ _PAGE = """<!doctype html>
   <main><section class="panel">
     <div class="status"><span class="dot"></span><span>LIVE · 视觉相机 192.168.3.253</span></div>
     <img id="stream" src="/stream.mjpg" alt="摄像头实时画面">
-    <footer>若画面中断，页面会自动重新连接。实时预览不会改变 PLC 运动或识别结果。</footer>
+    <footer>画面同步叠加最近一次 YOLO 检测框、类别、组号和置信度；若画面中断会自动重连。</footer>
   </section></main>
   <script>
     const img=document.getElementById('stream');
@@ -76,6 +76,7 @@ class CameraLiveView:
         self._condition = threading.Condition()
         self._jpeg: bytes | None = None
         self._sequence = 0
+        self._detection: dict | None = None
         self._capture_thread: threading.Thread | None = None
         self._http_thread: threading.Thread | None = None
         self._server: ThreadingHTTPServer | None = None
@@ -105,9 +106,61 @@ class CameraLiveView:
             if thread is not None and thread.is_alive():
                 thread.join(timeout=1.5)
 
+    def clear_detection(self) -> None:
+        """开始一次新识别前清除旧框，避免旧结果附着到新物料。"""
+        with self._condition:
+            self._detection = None
+
+    def update_detection(self, frame: np.ndarray, result,
+                         group: int | None = None, valid: bool = True) -> None:
+        """保存本次 YOLO 结果，并立即发布与该结果对应的标注帧。"""
+        box = tuple(int(round(v)) for v in getattr(result, "box", ()))
+        detection = {
+            "cls": str(getattr(result, "cls_name", "none")),
+            "conf": float(getattr(result, "conf", 0.0)),
+            "group": group,
+            "box": box,
+            "valid": bool(valid),
+            "time": time.time(),
+        }
+        with self._condition:
+            self._detection = detection
+        self.update_frame(frame)
+
+    def _draw_overlay(self, frame: np.ndarray) -> np.ndarray:
+        image = frame.copy()
+        with self._condition:
+            detection = dict(self._detection) if self._detection else None
+        if detection is None:
+            cv2.putText(image, "YOLO: WAITING", (18, 38),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.85, (0, 210, 255), 2,
+                        cv2.LINE_AA)
+            return image
+
+        valid = detection["valid"] and detection["cls"] != "none"
+        color = (40, 220, 40) if valid else (0, 170, 255)
+        box = detection["box"]
+        if len(box) == 4:
+            h, w = image.shape[:2]
+            x1, y1, x2, y2 = box
+            x1, x2 = sorted((max(0, min(w - 1, x1)), max(0, min(w - 1, x2))))
+            y1, y2 = sorted((max(0, min(h - 1, y1)), max(0, min(h - 1, y2))))
+            cv2.rectangle(image, (x1, y1), (x2, y2), color, 3)
+
+        group_text = "-" if detection["group"] is None else str(detection["group"])
+        label = (f"YOLO: {detection['cls']}  "
+                 f"conf={detection['conf']:.3f}  group={group_text}")
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.72, 2)
+        cv2.rectangle(image, (10, 8), (min(image.shape[1] - 1, tw + 30), th + 28),
+                      (20, 28, 32), -1)
+        cv2.putText(image, label, (18, th + 18), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.72, color, 2, cv2.LINE_AA)
+        return image
+
     def update_frame(self, frame: np.ndarray) -> None:
+        display = self._draw_overlay(frame)
         ok, encoded = cv2.imencode(
-            ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+            ".jpg", display, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
         if not ok:
             return
         with self._condition:
@@ -162,9 +215,13 @@ class CameraLiveView:
                     return
                 if path == "/health":
                     with owner._condition:
+                        detection = dict(owner._detection) if owner._detection else None
+                        if detection is not None:
+                            detection.pop("time", None)
                         payload = json.dumps({
                             "status": "ok" if owner._jpeg else "waiting",
                             "sequence": owner._sequence,
+                            "detection": detection,
                         }).encode("utf-8")
                     self._headers(content_type="application/json", length=len(payload))
                     self.wfile.write(payload)

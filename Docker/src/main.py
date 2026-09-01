@@ -167,6 +167,7 @@ class VisionApp:
 
         frame_number = getattr(self.camera, "last_frame_number", 0)
         if self.live_view is not None:
+            self.live_view.clear_detection()
             self.live_view.update_frame(raw_image)
         frame_hash = hashlib.sha256(raw_image.tobytes()).hexdigest()[:12]
         self.logger.info(
@@ -218,6 +219,9 @@ class VisionApp:
                     "elapsed_ms": now_ms() - t0}
 
         if result.cls_name == "none" or result.conf < self.cfg.conf:
+            if self.live_view is not None:
+                self.live_view.update_detection(
+                    raw_image, result, group=None, valid=False)
             self.logger.warning(
                 "当前帧没有有效识别结果：top-1=%s conf=%.3f < %.2f；"
                 "下一循环重新拍摄",
@@ -230,6 +234,9 @@ class VisionApp:
                     "elapsed_ms": now_ms() - t0}
 
         group = self.detector.to_plc_group_id(result.cls_name)
+        if self.live_view is not None:
+            self.live_view.update_detection(
+                raw_image, result, group=group, valid=True)
         self.comm.send(group)
         elapsed = now_ms() - t0
         out = {
