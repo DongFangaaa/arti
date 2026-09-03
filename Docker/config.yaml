@@ -1,0 +1,59 @@
+# =============================================================================
+# 视觉逻辑算法应用赛 — 运行参数配置（v3.4 — TCP 帧协议版）
+# =============================================================================
+# 本文件为程序的主配置文件，随镜像一起部署（/app/config.yaml）。
+# 现场调参只需修改本文件（或挂载覆盖），无需改动任何代码。
+# 删除本文件时程序回退到 config.py 中的内置默认值（与本文件一致）。
+# =============================================================================
+
+# ---------- 相机（海康 GigE，赛题视觉检测系统）----------
+# 注意：曝光/增益/白平衡等成像参数在海康 MVS 客户端手动调节并保存到相机，
+#       程序不覆盖相机内部参数；请确认 Pixel Format = BayerBG8。
+camera:
+  ip: "192.168.3.253"        # 赛题现场相机 IP（比赛现场固定）
+
+# ---------- 模型（ONNX Runtime 推理，YOLOv11n 检测模型导出版）----------
+model:
+  path: ""                    # 空 = 自动定位 models/best.onnx
+  device: "cpu"               # EPC1502 无独显，用 cpu（onnxruntime CPUExecutionProvider）
+  imgsz: 640                  # 仅兜底；实际输入尺寸以 ONNX 模型为准
+  conf: 0.80                  # 置信度阈值（低于此值不发送组号，仅记日志）
+  warmup: true                # 启动时预热，避免首帧延迟拉高比赛计时
+
+# ---------- 缺陷类别 → PLC 组号映射（S<组号>E 帧，组号 1~4）----------
+# 类别名以训练 dataset.yaml / ONNX 元数据为准（notch = 缺角）
+classes:
+  names: ["hole", "notch", "scratch", "stain"]   # 必须与训练 dataset.yaml 一致
+  plc_group_id:
+    hole:    1                # 孔洞
+    notch:   2                # 缺角
+    scratch: 3                # 划痕
+    stain:   4                # 污渍
+
+# ---------- PLC 通讯（原始 TCP 帧协议，见 plc_comm.py）----------
+# 对端为 vPLC（虚拟 PLC，地址 192.168.3.99），作为 TCP 客户端主动连接；
+# 本程序作为 TCP 服务端监听。若 vPLC 与视觉容器同机部署，可连 127.0.0.1:2000。
+# 报文：PLC→视觉 S0E=停止 / S1E=启动；视觉→PLC S1E~S4E=缺陷组号
+tcp:
+  host: "0.0.0.0"             # 监听地址（0.0.0.0 = 所有网卡）
+  port: 2000                  # 监听端口（需与 PLC 侧约定一致）
+  cmd_timeout_s: 0.05         # 指令轮询超时（兼顾响应速度与 CPU 占用）
+
+# ---------- 图像预处理（灰度 → 高斯去噪 → CLAHE）----------
+preprocess:
+  enable: true
+  denoise_ksize: 5            # 高斯核大小（奇数），0 表示自动 (3)
+  clahe: true
+  clahe_clip: 2.0             # clipLimit，建议 2.0~4.0
+  clahe_tile: 8               # tileGridSize
+
+# ---------- 运行时 ----------
+runtime:
+  vision_timeout_ms: 1000     # 单次抓帧超时
+  camera_retry: 3             # 抓帧重试次数
+# ---------- 日志 ----------
+logging:
+  level: "INFO"
+  dir: "./logs"
+  save_debug_image: false     # 调试期可改 true，保存带标注的识别图
+  debug_image_dir: "./logs/debug_images"

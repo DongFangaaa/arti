@@ -34,7 +34,7 @@ class AppConfig:
     model_path: str = ""                # 空 → 自动定位 models/best.onnx
     device: str = "cpu"                 # EPC1502 无独显，用 cpu
     imgsz: int = 640                    # 仅兜底；实际输入尺寸以 ONNX 模型为准
-    conf: float = 0.55                  # 置信度阈值（低于此值不发送组号，仅记日志）
+    conf: float = 0.80                  # 置信度阈值（低于此值不发送组号，仅记日志）
     warmup: bool = True
 
     # ---- 缺陷类别 → PLC 组号映射（S<组号>E 帧，组号 1~4）----
