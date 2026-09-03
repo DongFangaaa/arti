@@ -184,6 +184,10 @@ class VisionApp:
                 continue
             try:
                 _, result = self._recognize_frame(frame, run_options=None)
+                # 识别期间可能按下“关闭”，此时丢弃在途结果，保持 WAIT。
+                if not self._manual_yolo_enabled.is_set():
+                    self.live_view.clear_detection()
+                    continue
                 valid = result.cls_name != "none" and result.conf >= self.cfg.conf
                 group = (self.detector.to_plc_group_id(result.cls_name)
                          if valid else None)
@@ -401,7 +405,7 @@ class VisionApp:
                 self.live_view.stop()
             except Exception:  # noqa: BLE001
                 pass
-        for name, dev in (("camera", self.camera), ("comm", self.comm)):
+        for dev in (self.camera, self.comm):
             if dev is not None:
                 try:
                     dev.close()

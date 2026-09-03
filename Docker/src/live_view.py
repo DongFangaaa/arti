@@ -18,6 +18,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import cv2
 import numpy as np
 
+DETECTION_HOLD_SECONDS = 1.5
+
 
 _PAGE = """<!doctype html>
 <html lang="zh-CN">
@@ -120,6 +122,7 @@ class CameraLiveView:
         self._jpeg: bytes | None = None
         self._sequence = 0
         self._detection: dict | None = None
+        self._detection_until = 0.0
         self._frame: np.ndarray | None = None
         self._yolo_start_callback = None
         self._yolo_stop_callback = None
@@ -175,9 +178,19 @@ class CameraLiveView:
             return None if self._frame is None else self._frame.copy()
 
     def clear_detection(self) -> None:
-        """开始一次新识别前清除旧框，避免旧结果附着到新物料。"""
+        """立即清除旧结果并恢复 WAIT。"""
         with self._condition:
             self._detection = None
+            self._detection_until = 0.0
+
+    def _current_detection(self) -> dict | None:
+        """返回仍有效的结果；过期后自动恢复 WAIT。"""
+        with self._condition:
+            if (self._detection is not None
+                    and time.monotonic() >= self._detection_until):
+                self._detection = None
+                self._detection_until = 0.0
+            return dict(self._detection) if self._detection else None
 
     def update_detection(self, frame: np.ndarray, result,
                          group: int | None = None, valid: bool = True) -> None:
@@ -189,18 +202,17 @@ class CameraLiveView:
             "group": group,
             "box": box,
             "valid": bool(valid),
-            "time": time.time(),
         }
         with self._condition:
             self._detection = detection
+            self._detection_until = time.monotonic() + DETECTION_HOLD_SECONDS
         self.update_frame(frame)
 
     def _draw_overlay(self, frame: np.ndarray) -> np.ndarray:
         image = frame.copy()
-        with self._condition:
-            detection = dict(self._detection) if self._detection else None
+        detection = self._current_detection()
         if detection is None:
-            cv2.putText(image, "YOLO: WAITING", (18, 38),
+            cv2.putText(image, "YOLO: WAIT", (18, 38),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.85, (0, 210, 255), 2,
                         cv2.LINE_AA)
             return image
@@ -329,10 +341,8 @@ class CameraLiveView:
                     })
                     return
                 if path == "/health":
+                    detection = owner._current_detection()
                     with owner._condition:
-                        detection = dict(owner._detection) if owner._detection else None
-                        if detection is not None:
-                            detection.pop("time", None)
                         payload = json.dumps({
                             "status": "ok" if owner._jpeg else "waiting",
                             "sequence": owner._sequence,
