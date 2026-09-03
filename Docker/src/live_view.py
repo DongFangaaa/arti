@@ -109,7 +109,8 @@ class CameraLiveView:
 
     def __init__(self, camera, camera_lock, logger: logging.Logger,
                  host: str = "0.0.0.0", port: int = 8080,
-                 fps: float = 5.0, jpeg_quality: int = 80):
+                 fps: float = 5.0, jpeg_quality: int = 80,
+                 frame_transform=None):
         self.camera = camera
         self.camera_lock = camera_lock
         self.logger = logger
@@ -117,6 +118,7 @@ class CameraLiveView:
         self.port = int(port)
         self.period = 1.0 / max(0.5, float(fps))
         self.jpeg_quality = max(30, min(95, int(jpeg_quality)))
+        self.frame_transform = frame_transform
         self._running = threading.Event()
         self._condition = threading.Condition()
         self._jpeg: bytes | None = None
@@ -206,7 +208,7 @@ class CameraLiveView:
         with self._condition:
             self._detection = detection
             self._detection_until = time.monotonic() + DETECTION_HOLD_SECONDS
-        self.update_frame(frame)
+        self._publish_frame(frame)
 
     def _draw_overlay(self, frame: np.ndarray) -> np.ndarray:
         image = frame.copy()
@@ -244,8 +246,17 @@ class CameraLiveView:
         return image
 
     def update_frame(self, frame: np.ndarray) -> None:
+        """保存原始帧，并向网页发布 YOLO 实际使用的预处理图。"""
         with self._condition:
             self._frame = frame.copy()
+        display_frame = (
+            self.frame_transform(frame.copy())
+            if self.frame_transform is not None else frame
+        )
+        self._publish_frame(display_frame)
+
+    def _publish_frame(self, frame: np.ndarray) -> None:
+        """发布显示帧；不会覆盖供识别使用的原始帧缓存。"""
         display = self._draw_overlay(frame)
         ok, encoded = cv2.imencode(
             ".jpg", display, [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])

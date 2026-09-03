@@ -79,6 +79,7 @@ class VisionApp:
         self.logger = self._setup_logger()
         self.camera: CameraBase | None = None
         self.preprocessor: Preprocessor | None = None
+        self.preview_preprocessor: Preprocessor | None = None
         self.detector: DefectClassifier | None = None
         self.comm: TCP | None = None
         self.live_view: CameraLiveView | None = None
@@ -111,6 +112,10 @@ class VisionApp:
         self.camera = HikCamera(self.cfg, self.logger)
         self.camera.open()
 
+        # 识别与预览分别持有预处理器，避免两个线程并发使用同一 CLAHE 实例。
+        self.preprocessor = Preprocessor(self.cfg, self.logger)
+        self.preview_preprocessor = Preprocessor(self.cfg, self.logger)
+
         # 实时预览和识别共用一个相机句柄，所有 MVS 抓帧调用串行化。
         if with_comm:
             self.live_view = CameraLiveView(
@@ -120,11 +125,11 @@ class VisionApp:
                 host="0.0.0.0",
                 port=8080,
                 fps=5.0,
+                frame_transform=self.preview_preprocessor.run,
             )
             self.live_view.start()
 
-        # 2) 预处理（灰度 → 高斯去噪 → CLAHE）
-        self.preprocessor = Preprocessor(self.cfg, self.logger)
+        # 2) 彩色预处理已初始化：去噪、亮度增强、动态外圆分割。
 
         # 3) 缺陷分类模型
         self.detector = DefectClassifier(self.cfg, self.logger)
@@ -183,7 +188,7 @@ class VisionApp:
                 self._shutdown_event.wait(0.1)
                 continue
             try:
-                _, result = self._recognize_frame(frame, run_options=None)
+                image, result = self._recognize_frame(frame, run_options=None)
                 # 识别期间可能按下“关闭”，此时丢弃在途结果，保持 WAIT。
                 if not self._manual_yolo_enabled.is_set():
                     self.live_view.clear_detection()
@@ -192,7 +197,7 @@ class VisionApp:
                 group = (self.detector.to_plc_group_id(result.cls_name)
                          if valid else None)
                 self.live_view.update_detection(
-                    frame, result, group=group, valid=valid)
+                    image, result, group=group, valid=valid)
                 self.logger.info(
                     "网页手动 YOLO: cls=%s conf=%.4f group=%s valid=%s",
                     result.cls_name, result.conf, group, valid)
@@ -287,7 +292,7 @@ class VisionApp:
         if result.cls_name == "none" or result.conf < self.cfg.conf:
             if self.live_view is not None:
                 self.live_view.update_detection(
-                    raw_image, result, group=None, valid=False)
+                    image, result, group=None, valid=False)
             self.logger.warning(
                 "当前帧没有有效识别结果：top-1=%s conf=%.3f < %.2f；"
                 "下一循环重新拍摄",
@@ -302,7 +307,7 @@ class VisionApp:
         group = self.detector.to_plc_group_id(result.cls_name)
         if self.live_view is not None:
             self.live_view.update_detection(
-                raw_image, result, group=group, valid=True)
+                image, result, group=group, valid=True)
         self.comm.send(group)
         elapsed = now_ms() - t0
         out = {

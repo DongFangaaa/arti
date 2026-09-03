@@ -10,6 +10,8 @@ import logging
 
 import numpy as np
 
+CIRCLE_INSET_PIXELS = 5
+
 try:
     from .config import AppConfig
 except ImportError:  # 脚本模式（python src/xxx.py）回退
@@ -96,11 +98,12 @@ class Preprocessor:
     @staticmethod
     def _whiten_outside_circle(
             image: np.ndarray, circle: tuple[int, int, int]) -> np.ndarray:
-        """保留圆内图像，将外圆以外的像素设为纯白。"""
+        """保留圆内图像，并从检测到的圆边界向内 5 像素开始设为纯白。"""
         import cv2
         x, y, radius = circle
+        inner_radius = max(1, radius - CIRCLE_INSET_PIXELS)
         mask = np.zeros(image.shape[:2], dtype=np.uint8)
-        cv2.circle(mask, (x, y), radius, 255, thickness=-1)
+        cv2.circle(mask, (x, y), inner_radius, 255, thickness=-1)
         result = np.full_like(image, 255)
         result[mask != 0] = image[mask != 0]
         return result
