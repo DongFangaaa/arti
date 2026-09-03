@@ -1,4 +1,4 @@
-"""彩色图像预处理模块（BGR → 去噪 → 亮度增强 → 外圆分割）。
+"""灰度图像预处理模块（BGR → 灰度 → 去噪 → CLAHE → 外圆分割）。
 
 对应赛题"安装调试"环节可调参数：denoise_ksize / clahe_clip / clahe_tile。
 
@@ -22,12 +22,13 @@ except ImportError:  # 脚本模式（python src/xxx.py）回退
 
 
 class Preprocessor:
-    """保留颜色的预处理流水线：
+    """灰度预处理流水线：
 
       1. 统一为三通道 BGR
-      2. 高斯去噪（GaussianBlur）
-      3. 仅增强 LAB 亮度通道，保留颜色信息
-      4. 检测最大的外圆，将圆外背景填为纯白色
+      2. 动态检测并稳定最大的外圆
+      3. 转换为灰度图并执行高斯去噪
+      4. 对灰度图执行 CLAHE
+      5. 转回三通道，将圆外背景填为纯白色
     """
 
     def __init__(self, cfg: AppConfig, logger: logging.Logger):
@@ -52,9 +53,7 @@ class Preprocessor:
         img = self._to_bgr(image)
         detected_circle = self._find_largest_outer_circle(img)
         circle = self._stabilize_circle(detected_circle)
-        img = self._denoise(img)
-        if self._clahe is not None:
-            img = self._enhance_luminance(img)
+        img = self._grayscale_preprocess(img)
         if circle is not None:
             img = self._whiten_outside_circle(img, circle)
         return img
@@ -70,11 +69,14 @@ class Preprocessor:
             return cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
         raise ValueError(f"unsupported image shape: {image.shape}")
 
-    def _enhance_luminance(self, image: np.ndarray) -> np.ndarray:
+    def _grayscale_preprocess(self, image: np.ndarray) -> np.ndarray:
+        """转灰度、去噪和 CLAHE，再恢复为 YOLO 所需的三通道图像。"""
         import cv2
-        lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
-        lab[:, :, 0] = self._clahe.apply(lab[:, :, 0])
-        return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        gray = self._denoise(gray)
+        if self._clahe is not None:
+            gray = self._clahe.apply(gray)
+        return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
     def _find_largest_outer_circle(
             self, image: np.ndarray) -> tuple[int, int, int] | None:
