@@ -11,7 +11,10 @@ import time
 from pathlib import Path
 
 import cv2
+import numpy as np
 from ultralytics import YOLO
+
+WINDOW_NAME = "YOLO live stream - Q/Esc to quit"
 
 
 class LatestFrameStream:
@@ -124,6 +127,24 @@ def main() -> int:
     if not model_path.is_file():
         raise FileNotFoundError(f"模型不存在：{model_path}")
 
+    if not args.headless:
+        # 先创建窗口，避免模型加载和首次推理期间看起来“没有画面”。
+        cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(WINDOW_NAME, 800, 800)
+        loading = np.zeros((440, 440, 3), dtype=np.uint8)
+        cv2.putText(
+            loading,
+            "Loading model and video stream...",
+            (28, 220),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (255, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
+        cv2.imshow(WINDOW_NAME, loading)
+        cv2.waitKey(1)
+
     print(f"加载模型：{model_path}")
     model = YOLO(str(model_path))
     print(f"类别：{model.names}")
@@ -140,6 +161,12 @@ def main() -> int:
             if frame is None:
                 print("等待数据流画面……")
                 continue
+
+            if not args.headless:
+                # 先显示刚取得的实时帧，再进行可能耗时的 YOLO 推理。
+                cv2.imshow(WINDOW_NAME, frame)
+                if cv2.waitKey(1) & 0xFF in (ord("q"), 27):
+                    break
 
             result = model.predict(
                 source=frame,
@@ -166,7 +193,7 @@ def main() -> int:
                 writer.write(annotated)
 
             if not args.headless:
-                cv2.imshow("YOLO live stream - Q/Esc to quit", annotated)
+                cv2.imshow(WINDOW_NAME, annotated)
                 if cv2.waitKey(1) & 0xFF in (ord("q"), 27):
                     break
     except KeyboardInterrupt:
