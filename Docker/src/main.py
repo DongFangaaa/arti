@@ -125,7 +125,9 @@ class VisionApp:
                 host="0.0.0.0",
                 port=8080,
                 fps=5.0,
-                frame_transform=self.preview_preprocessor.run,
+                # 网页显示相机经 MVS SDK 正确解码后的 BGR 彩色帧；
+                # YOLO 正式推理仍在 _recognize_frame() 中使用灰度预处理。
+                frame_transform=None,
             )
             self.live_view.start()
 
