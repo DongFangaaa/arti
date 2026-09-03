@@ -48,6 +48,7 @@ class HikCamera(CameraBase):
         self._cam = None
         self._open = False
         self.last_frame_number = 0
+        self._pixel_type_logged = False
         # 延迟导入：容器内必须装好 MVS SDK，否则 import 即失败
         try:
             from MvImport.MvCameraControl_class import MvCamera  # noqa: F401
@@ -230,12 +231,15 @@ class HikCamera(CameraBase):
 
         像素格式处理：
           - BGR8 Packed → 直接 reshape 返回
-          - BayerBG8    → 显式按 BG 排列去马赛克（COLOR_BayerBG2BGR）
+          - Bayer8      → 由海康 MVS SDK 按实际 enPixelType 转换为 BGR8
           - Mono8       → 灰度转 BGR
           - 其他格式    → 交 MVS SDK 按帧信息自动转换（保底）
         """
         from MvImport.CameraParams_header import (
-            MV_FRAME_OUT, PixelType_Gvsp_BGR8_Packed)
+            MV_FRAME_OUT, PixelType_Gvsp_BGR8_Packed,
+            PixelType_Gvsp_BayerBG8, PixelType_Gvsp_BayerGB8,
+            PixelType_Gvsp_BayerGR8, PixelType_Gvsp_BayerRG8,
+            PixelType_Gvsp_Mono8)
         if not self._open:
             raise VisionError("相机未打开")
 
@@ -248,7 +252,20 @@ class HikCamera(CameraBase):
             self.last_frame_number = int(getattr(info, "nFrameNum", 0))
             w, h = info.nWidth, info.nHeight
             frame_len = info.nFrameLen
-            pixel_type = info.enPixelType
+            pixel_type = int(info.enPixelType)
+            pixel_names = {
+                PixelType_Gvsp_BGR8_Packed: "BGR8_Packed",
+                PixelType_Gvsp_BayerBG8: "BayerBG8",
+                PixelType_Gvsp_BayerGB8: "BayerGB8",
+                PixelType_Gvsp_BayerGR8: "BayerGR8",
+                PixelType_Gvsp_BayerRG8: "BayerRG8",
+                PixelType_Gvsp_Mono8: "Mono8",
+            }
+            if not self._pixel_type_logged:
+                self.logger.info(
+                    "相机实际像素格式: %s (0x%08x), frame=%dx%d",
+                    pixel_names.get(pixel_type, "unknown"), pixel_type, w, h)
+                self._pixel_type_logged = True
 
             # pBufAddr 指向 SDK 内部缓冲（ARM64 兼容处理）
             buf_addr = st_frame.pBufAddr
@@ -287,27 +304,18 @@ class HikCamera(CameraBase):
             if pixel_type == PixelType_Gvsp_BGR8_Packed:
                 return raw[:w * h * 3].reshape(h, w, 3).copy()
 
-            import cv2
-            from MvImport.CameraParams_header import (
-                PixelType_Gvsp_BayerBG8, PixelType_Gvsp_BayerGB8,
-                PixelType_Gvsp_BayerGR8, PixelType_Gvsp_BayerRG8,
-                PixelType_Gvsp_Mono8)
-            # 现场相机为 BayerRG8。原映射会造成红蓝通道互换（画面偏青）。
-            # 使用互补排列后输出真正的 OpenCV BGR，预览和 YOLO 共用同一颜色。
-            bayer_codes = {
-                PixelType_Gvsp_BayerBG8: cv2.COLOR_BayerRG2BGR,
-                PixelType_Gvsp_BayerGB8: cv2.COLOR_BayerGR2BGR,
-                PixelType_Gvsp_BayerGR8: cv2.COLOR_BayerGB2BGR,
-                PixelType_Gvsp_BayerRG8: cv2.COLOR_BayerBG2BGR,
-            }
-            if pixel_type in bayer_codes:
-                gray = raw[:w * h].reshape(h, w).copy()
-                return cv2.cvtColor(gray, bayer_codes[pixel_type])
             if pixel_type == PixelType_Gvsp_Mono8:
+                import cv2
                 gray = raw[:w * h].reshape(h, w).copy()
                 return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
-            self.logger.warning("非常见像素格式 0x%08x，交由 SDK 转换", pixel_type)
+            bayer_types = {
+                PixelType_Gvsp_BayerBG8, PixelType_Gvsp_BayerGB8,
+                PixelType_Gvsp_BayerGR8, PixelType_Gvsp_BayerRG8,
+            }
+            if pixel_type not in bayer_types:
+                self.logger.warning(
+                    "非常见像素格式 0x%08x，交由 MVS SDK 转换", pixel_type)
             from MvImport.CameraParams_header import MV_CC_PIXEL_CONVERT_PARAM
             convert = MV_CC_PIXEL_CONVERT_PARAM()
             ctypes.memset(ctypes.byref(convert), 0, ctypes.sizeof(convert))
