@@ -11,6 +11,9 @@ import logging
 import numpy as np
 
 CIRCLE_INSET_PIXELS = 5
+CIRCLE_CENTER_DEADBAND_PIXELS = 3.0
+CIRCLE_RADIUS_DEADBAND_PIXELS = 3
+CIRCLE_MISS_HOLD_FRAMES = 10
 
 try:
     from .config import AppConfig
@@ -30,6 +33,9 @@ class Preprocessor:
     def __init__(self, cfg: AppConfig, logger: logging.Logger):
         self.cfg = cfg
         self.logger = logger
+        self._stable_circle: tuple[int, int, int] | None = None
+        self._circle_miss_count = 0
+        self._circle_missing_logged = False
         if cfg.pre_clahe:
             import cv2
             self._clahe = cv2.createCLAHE(
@@ -44,7 +50,8 @@ class Preprocessor:
         if not self.cfg.pre_enable:
             return image
         img = self._to_bgr(image)
-        circle = self._find_largest_outer_circle(img)
+        detected_circle = self._find_largest_outer_circle(img)
+        circle = self._stabilize_circle(detected_circle)
         img = self._denoise(img)
         if self._clahe is not None:
             img = self._enhance_luminance(img)
@@ -88,12 +95,46 @@ class Preprocessor:
             maxRadius=int(minimum_size * 0.49),
         )
         if circles is None:
-            self.logger.warning("未检测到物料外圆，本帧保留原背景")
             return None
         x, y, radius = max(circles[0], key=lambda item: item[2])
         circle = int(round(x)), int(round(y)), int(round(radius))
         self.logger.debug("检测到最大外圆: center=(%d,%d), radius=%d", *circle)
         return circle
+
+    def _stabilize_circle(
+            self, detected: tuple[int, int, int] | None
+    ) -> tuple[int, int, int] | None:
+        """对圆参数设置死区，避免检测噪声造成裁白边界逐帧抖动。"""
+        if detected is None:
+            self._circle_miss_count += 1
+            if (self._stable_circle is not None
+                    and self._circle_miss_count <= CIRCLE_MISS_HOLD_FRAMES):
+                return self._stable_circle
+            self._stable_circle = None
+            if not self._circle_missing_logged:
+                self.logger.warning("连续未检测到物料外圆，暂时保留原背景")
+                self._circle_missing_logged = True
+            return None
+
+        self._circle_miss_count = 0
+        self._circle_missing_logged = False
+        if self._stable_circle is None:
+            self._stable_circle = detected
+            return detected
+
+        old_x, old_y, old_radius = self._stable_circle
+        new_x, new_y, new_radius = detected
+        center_shift = ((new_x - old_x) ** 2 + (new_y - old_y) ** 2) ** 0.5
+        radius_shift = abs(new_radius - old_radius)
+        if (center_shift <= CIRCLE_CENTER_DEADBAND_PIXELS
+                and radius_shift <= CIRCLE_RADIUS_DEADBAND_PIXELS):
+            return self._stable_circle
+
+        self.logger.debug(
+            "外圆范围更新: %s -> %s (center_shift=%.2f, radius_shift=%d)",
+            self._stable_circle, detected, center_shift, radius_shift)
+        self._stable_circle = detected
+        return detected
 
     @staticmethod
     def _whiten_outside_circle(
