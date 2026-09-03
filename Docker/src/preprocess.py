@@ -10,9 +10,9 @@ import logging
 
 import numpy as np
 
-CIRCLE_INSET_PIXELS = 5
-CIRCLE_CENTER_DEADBAND_PIXELS = 3.0
-CIRCLE_RADIUS_DEADBAND_PIXELS = 3
+CIRCLE_INSET_PIXELS = 10
+CIRCLE_CENTER_DEADBAND_PIXELS = 15.0
+CIRCLE_RADIUS_DEADBAND_PIXELS = 15
 CIRCLE_MISS_HOLD_FRAMES = 10
 
 try:
@@ -139,7 +139,7 @@ class Preprocessor:
     @staticmethod
     def _whiten_outside_circle(
             image: np.ndarray, circle: tuple[int, int, int]) -> np.ndarray:
-        """保留圆内图像，并从检测到的圆边界向内 5 像素开始设为纯白。"""
+        """保留圆内图像，并从检测到的圆边界向内 10 像素开始设为纯白。"""
         import cv2
         x, y, radius = circle
         inner_radius = max(1, radius - CIRCLE_INSET_PIXELS)
