@@ -1,0 +1,41 @@
+{
+  "version": "4.0.0-beta.13",
+  "flags": {},
+  "checked": false,
+  "shapes": [
+    {
+      "label": "notch",
+      "score": null,
+      "points": [
+        [
+          182.7102177554438,
+          395.5242881072026
+        ],
+        [
+          234.999968,
+          395.5242881072026
+        ],
+        [
+          234.999968,
+          416.999968
+        ],
+        [
+          182.7102177554438,
+          416.999968
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    }
+  ],
+  "imagePath": "picture_notch_151__v2.png",
+  "imageData": null,
+  "imageHeight": 448,
+  "imageWidth": 448,
+  "description": ""
+}

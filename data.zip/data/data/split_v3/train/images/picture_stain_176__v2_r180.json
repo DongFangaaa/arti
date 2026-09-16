@@ -1,0 +1,41 @@
+{
+  "version": "2.5.0",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "stain",
+      "score": null,
+      "points": [
+        [
+          326.999904,
+          255.000032
+        ],
+        [
+          377.999776,
+          255.000032
+        ],
+        [
+          377.999776,
+          305.999904
+        ],
+        [
+          326.999904,
+          305.999904
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    }
+  ],
+  "imagePath": "picture_stain_176__v2_r180.png",
+  "imageData": null,
+  "imageHeight": 448,
+  "imageWidth": 448,
+  "description": "",
+  "checked": false
+}

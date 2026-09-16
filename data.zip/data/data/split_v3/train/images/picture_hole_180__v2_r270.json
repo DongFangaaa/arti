@@ -1,0 +1,41 @@
+{
+  "version": "2.5.0",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "hole",
+      "score": null,
+      "points": [
+        [
+          291.999904,
+          140.999936
+        ],
+        [
+          366.000096,
+          140.999936
+        ],
+        [
+          366.000096,
+          209.000064
+        ],
+        [
+          291.999904,
+          209.000064
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    }
+  ],
+  "imagePath": "picture_hole_180__v2_r270.png",
+  "imageData": null,
+  "imageHeight": 448,
+  "imageWidth": 448,
+  "description": "",
+  "checked": false
+}

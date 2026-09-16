@@ -1,0 +1,41 @@
+{
+  "version": "2.5.0",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "hole",
+      "score": null,
+      "points": [
+        [
+          349.00032000000004,
+          399.00000000000006
+        ],
+        [
+          425.00032,
+          399.00000000000006
+        ],
+        [
+          425.00032,
+          461.99968
+        ],
+        [
+          349.00032000000004,
+          461.99968
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    }
+  ],
+  "imagePath": "Image_20260803154834356.jpg",
+  "imageData": null,
+  "imageHeight": 640,
+  "imageWidth": 640,
+  "description": "",
+  "checked": false
+}

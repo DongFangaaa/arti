@@ -1,0 +1,46 @@
+{
+  "version": "2.5.0",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "hole",
+      "score": null,
+      "points": [
+        [
+          433,
+          243
+        ],
+        [
+          541,
+          243
+        ],
+        [
+          541,
+          334
+        ],
+        [
+          433,
+          334
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "difficult": false,
+      "shape_type": "rectangle",
+      "flags": {},
+      "attributes": {},
+      "kie_linking": []
+    }
+  ],
+  "imagePath": "Image_20260803154127042.jpg",
+  "imageData": null,
+  "imageHeight": 640,
+  "imageWidth": 640,
+  "description": "",
+  "checked": true,
+  "annotation_audit": {
+    "method": "manual_visual_external_bbox",
+    "date": "2026-09-11",
+    "visual_reviewed": true
+  }
+}

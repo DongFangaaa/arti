@@ -1,0 +1,58 @@
+{
+  "method": "stratified group split by original stem",
+  "seed": 20260905,
+  "ratios_by_group": {
+    "train": 0.8,
+    "val": 0.1,
+    "test": 0.1
+  },
+  "policy": {
+    "train": "base plus r90/r180/r270 records; g0.6/g1.6 excluded",
+    "val_test": "one unaugmented base image per assigned group",
+    "source_dataset": "preserved unchanged"
+  },
+  "source_records": 20055,
+  "source_groups": 3745,
+  "link_method_counts": {
+    "hardlink": 11646
+  },
+  "validation": {
+    "train": {
+      "images": 10894,
+      "labels": 10894,
+      "groups": 2993,
+      "boxes": 10917,
+      "class_counts": {
+        "0": 2730,
+        "1": 2732,
+        "2": 2724,
+        "3": 2731
+      }
+    },
+    "val": {
+      "images": 376,
+      "labels": 376,
+      "groups": 376,
+      "boxes": 380,
+      "class_counts": {
+        "0": 95,
+        "1": 96,
+        "2": 94,
+        "3": 95
+      }
+    },
+    "test": {
+      "images": 376,
+      "labels": 376,
+      "groups": 376,
+      "boxes": 380,
+      "class_counts": {
+        "0": 95,
+        "1": 96,
+        "2": 94,
+        "3": 95
+      }
+    },
+    "problems": []
+  }
+}
