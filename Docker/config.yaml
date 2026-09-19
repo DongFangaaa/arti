@@ -17,7 +17,7 @@ model:
   path: ""                    # 空 = 自动定位 models/best.onnx
   device: "cpu"               # EPC1502 无独显，用 cpu（onnxruntime CPUExecutionProvider）
   imgsz: 640                  # 仅兜底；实际输入尺寸以 ONNX 模型为准
-  conf: 0.80                  # 置信度阈值（低于此值不发送组号，仅记日志）
+  conf: 0.85                  # 置信度阈值（低于此值不发送组号，仅记日志）
   warmup: true                # 启动时预热，避免首帧延迟拉高比赛计时
 
 # ---------- 缺陷类别 → PLC 组号映射（S<组号>E 帧，组号 1~4）----------
