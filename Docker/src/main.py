@@ -65,7 +65,7 @@ except ImportError:  # 脚本模式（python src/main.py）回退
 # PLC 指令帧（S<数字>E）：与 plc_comm.py 模块 docstring 保持一致
 CMD_STOP = 0    # S0E 停止视觉
 CMD_START = 1   # S1E 启动视觉
-FRAME_RESULT_TIMEOUT_S = 3.0
+FRAME_RESULT_TIMEOUT_S = 5.0
 
 
 # =============================================================================
@@ -212,7 +212,7 @@ class VisionApp:
                     break
 
     def _detect_and_send(self) -> dict:
-        """抓取一张最新图片并识别；3秒无结果时终止推理并等待重拍。"""
+        """抓取一张最新图片并识别；5秒无结果时终止推理并等待重拍。"""
         t0 = now_ms()
 
         # 丢弃上一次推理期间积压的帧，确保本次抓到当前画面。
@@ -246,7 +246,7 @@ class VisionApp:
         self.logger.info(
             "已抓取当前帧 number=%s sha256=%s", frame_number, frame_hash)
 
-        # 预处理和ONNX推理合计最多等待3秒。超时终止旧推理，
+        # 预处理和ONNX推理合计最多等待5秒。超时终止旧推理，
         # 旧结果永不发送；主循环随后重新获取最新画面。
         run_options = self.detector.create_run_options()
         executor = ThreadPoolExecutor(
@@ -372,7 +372,7 @@ class VisionApp:
                             self._manual_yolo_enabled.clear()
                             self.logger.info("PLC 正式识别启动，已自动暂停网页手动 YOLO")
                             # 等待正在执行的最后一次网页推理退出，再开始 PLC
-                            # 的3秒计时，避免手动模式占用模型导致正式识别超时。
+                            # 的5秒计时，避免手动模式占用模型导致正式识别超时。
                             with self._inference_lock:
                                 pass
                         if not self._detecting:
