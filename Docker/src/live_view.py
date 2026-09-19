@@ -109,7 +109,7 @@ class CameraLiveView:
 
     def __init__(self, camera, camera_lock, logger: logging.Logger,
                  host: str = "0.0.0.0", port: int = 8080,
-                 fps: float = 5.0, jpeg_quality: int = 80,
+                 fps: float = 1.0, jpeg_quality: int = 80,
                  frame_transform=None):
         self.camera = camera
         self.camera_lock = camera_lock
@@ -194,9 +194,9 @@ class CameraLiveView:
                 self._detection_until = 0.0
             return dict(self._detection) if self._detection else None
 
-    def update_detection(self, frame: np.ndarray, result,
+    def update_detection(self, _frame: np.ndarray, result,
                          group: int | None = None, valid: bool = True) -> None:
-        """保存本次 YOLO 结果，并立即发布与该结果对应的标注帧。"""
+        """只更新识别信息；下一张实时帧负责显示，禁止重新发布旧帧。"""
         box = tuple(int(round(v)) for v in getattr(result, "box", ()))
         detection = {
             "cls": str(getattr(result, "cls_name", "none")),
@@ -208,7 +208,6 @@ class CameraLiveView:
         with self._condition:
             self._detection = detection
             self._detection_until = time.monotonic() + DETECTION_HOLD_SECONDS
-        self._publish_frame(frame)
 
     def _draw_overlay(self, frame: np.ndarray) -> np.ndarray:
         image = frame.copy()
