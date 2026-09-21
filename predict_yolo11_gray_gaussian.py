@@ -1,7 +1,7 @@
 """对指定图片进行灰度化、高斯滤波，并调用 YOLO11 识别。
 
-在 VS Code 中直接运行时，通常只需要修改下面三个路径常量。
-也可以通过命令行的 --model、--image 和 --output 临时覆盖。
+在 VS Code 中直接运行时，通常只需要修改下面两个路径常量。
+也可以通过命令行的 --model 和 --image 临时覆盖。
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ import numpy as np
 # ======================== 可修改接口 ========================
 MODEL_PATH = Path(r"D:\Git\atfi\models\yolo11n_four_defects_best.pt")
 IMAGE_PATH = Path(r"D:\Git\atfi\vision_color_gray_comparison.png")
-OUTPUT_PATH = Path(r"D:\Git\atfi\results\yolo11_gray_gaussian_result.jpg")
 
 CONFIDENCE = 0.80
 IMAGE_SIZE = 640
@@ -64,7 +63,6 @@ def gray_gaussian_preprocess(
 def run_yolo11(
     model_path: str | Path,
     image_path: str | Path,
-    output_path: str | Path,
     *,
     conf: float = 0.80,
     imgsz: int = 640,
@@ -72,12 +70,11 @@ def run_yolo11(
     sigma: float = 0.0,
     device: str | None = None,
 ) -> dict[str, Any]:
-    """预处理一张具体图片，调用YOLO11，并保存可视化结果。"""
+    """预处理一张具体图片，调用YOLO11，并直接显示识别结果。"""
     from ultralytics import YOLO
 
     model_path = Path(model_path).expanduser().resolve()
     image_path = Path(image_path).expanduser().resolve()
-    output_path = Path(output_path).expanduser().resolve()
 
     if not model_path.is_file():
         raise FileNotFoundError(f"模型不存在：{model_path}")
@@ -108,7 +105,6 @@ def run_yolo11(
     response: dict[str, Any] = {
         "model": str(model_path),
         "image": str(image_path),
-        "output": str(output_path),
         "conf_threshold": conf,
         "gaussian_kernel_size": kernel_size,
         "gaussian_sigma": sigma,
@@ -153,10 +149,11 @@ def run_yolo11(
     else:
         response["task"] = "unknown"
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
     annotated_image = result.plot()
-    if not cv2.imwrite(str(output_path), annotated_image):
-        raise OSError(f"结果图片保存失败：{output_path}")
+    cv2.imshow("YOLO11 recognition result", annotated_image)
+    print("识别结果窗口已打开，按任意键关闭。")
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
     return response
 
@@ -167,7 +164,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--model", type=Path, default=MODEL_PATH, help="YOLO11模型地址")
     parser.add_argument("--image", type=Path, default=IMAGE_PATH, help="待识别图片地址")
-    parser.add_argument("--output", type=Path, default=OUTPUT_PATH, help="结果图片保存地址")
     parser.add_argument("--conf", type=float, default=CONFIDENCE, help="置信度阈值")
     parser.add_argument("--imgsz", type=int, default=IMAGE_SIZE, help="YOLO输入尺寸")
     parser.add_argument(
@@ -186,7 +182,6 @@ def main() -> None:
     response = run_yolo11(
         model_path=args.model,
         image_path=args.image,
-        output_path=args.output,
         conf=args.conf,
         imgsz=args.imgsz,
         kernel_size=args.kernel_size,
