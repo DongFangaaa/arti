@@ -1,0 +1,84 @@
+{
+  "format": "XAnyLabeling JSON rectangles",
+  "class_names": [
+    "hole",
+    "notch",
+    "scratch",
+    "stain"
+  ],
+  "source_class_id_map": {
+    "0": "stain",
+    "1": "scratch",
+    "2": "hole",
+    "3": "notch"
+  },
+  "recommended_export_class_order": [
+    "hole",
+    "notch",
+    "scratch",
+    "stain"
+  ],
+  "image_counts": {
+    "train": 6406,
+    "val": 800,
+    "test": 800
+  },
+  "total_images": 8006,
+  "empty_negative_images": {
+    "train": 6
+  },
+  "class_box_counts": {
+    "train": {
+      "stain": 1600,
+      "notch": 1600,
+      "scratch": 1600,
+      "hole": 1600
+    },
+    "val": {
+      "scratch": 200,
+      "stain": 200,
+      "notch": 200,
+      "hole": 200
+    },
+    "test": {
+      "hole": 200,
+      "notch": 200,
+      "stain": 200,
+      "scratch": 200
+    }
+  },
+  "exact_duplicate_groups": 0,
+  "cross_split_exact_duplicate_groups": 0,
+  "negative_policy": "All root-level unannotated BMP images are kept together in train because they are one correlated acquisition group.",
+  "validation": {
+    "status": "ok",
+    "images": {
+      "train": 6406,
+      "val": 800,
+      "test": 800
+    },
+    "empty": {
+      "train": 6
+    },
+    "class_boxes": {
+      "train": {
+        "stain": 1600,
+        "notch": 1600,
+        "scratch": 1600,
+        "hole": 1600
+      },
+      "val": {
+        "scratch": 200,
+        "stain": 200,
+        "notch": 200,
+        "hole": 200
+      },
+      "test": {
+        "hole": 200,
+        "notch": 200,
+        "stain": 200,
+        "scratch": 200
+      }
+    }
+  }
+}
