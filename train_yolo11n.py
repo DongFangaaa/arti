@@ -32,6 +32,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--name", default="yolo11n_four_defects")
     parser.add_argument("--project", type=Path, default=DEFAULT_PROJECT)
     parser.add_argument("--resume", type=Path, default=None)
+    parser.add_argument(
+        "--stall-patience", type=int, default=60,
+        help="Epochs without fitness improvement before entering the final no-mosaic phase.",
+    )
+    parser.add_argument(
+        "--final-no-mosaic-epochs", type=int, default=50,
+        help="Number of epochs to continue after a plateau, with mosaic disabled.",
+    )
     return parser.parse_args()
 
 
@@ -104,6 +112,69 @@ def validate_dataset(data_yaml: Path) -> dict[str, object]:
     return report
 
 
+def install_final_no_mosaic_phase(
+    model: object,
+    stall_patience: int,
+    final_epochs: int,
+) -> None:
+    """Replace ordinary early stopping with one final, fixed no-mosaic phase."""
+    if stall_patience <= 0:
+        raise ValueError("--stall-patience must be greater than 0")
+    if final_epochs <= 0:
+        raise ValueError("--final-no-mosaic-epochs must be greater than 0")
+
+    state = {"triggered": False}
+
+    def disable_builtin_early_stopping(trainer: object) -> None:
+        # Keep EarlyStopping's best_epoch tracking, but prevent it from ending training.
+        trainer.args.patience = 0
+        trainer.stopper.patience = float("inf")
+
+    def enter_final_phase(trainer: object) -> None:
+        if state["triggered"]:
+            return
+
+        completed_epochs = trainer.epoch + 1
+        epochs_without_improvement = completed_epochs - trainer.stopper.best_epoch
+        if epochs_without_improvement < stall_patience:
+            return
+
+        state["triggered"] = True
+        previous_end_epoch = trainer.epochs
+        remaining_epochs = max(previous_end_epoch - completed_epochs, 0)
+
+        # If more than final_epochs remain, jump directly to a new final phase.
+        # If normal training is already in its last final_epochs, retain that end point.
+        if remaining_epochs > final_epochs:
+            trainer.epochs = completed_epochs + final_epochs
+            trainer.args.epochs = trainer.epochs
+            trainer._setup_scheduler()
+            trainer.scheduler.last_epoch = trainer.epoch
+
+        # Disable mosaic immediately and prevent the regular close_mosaic trigger from
+        # closing/resetting the dataloader a second time at the next epoch.
+        trainer._close_dataloader_mosaic()
+        trainer.train_loader.reset()
+        trainer.args.mosaic = 0.0
+        trainer.args.close_mosaic = 0
+        trainer.stopper.possible_stop = False
+
+        # final_epoch or a restored patience value may already have raised stop in this
+        # epoch. Clear it only when there are still final-phase epochs to run.
+        if completed_epochs < trainer.epochs:
+            trainer.stop = False
+
+        print(
+            "Fitness has not improved for "
+            f"{epochs_without_improvement} epochs. Mosaic is now disabled; "
+            f"training will finish at epoch {trainer.epochs} "
+            f"({trainer.epochs - completed_epochs} epochs remaining)."
+        )
+
+    model.add_callback("on_train_start", disable_builtin_early_stopping)
+    model.add_callback("on_fit_epoch_end", enter_final_phase)
+
+
 def main() -> None:
     args = parse_args()
     dataset_report = validate_dataset(args.data)
@@ -116,13 +187,21 @@ def main() -> None:
         if not checkpoint.is_file():
             raise FileNotFoundError(f"Resume checkpoint not found: {checkpoint}")
         model = YOLO(str(checkpoint))
+        install_final_no_mosaic_phase(
+            model, args.stall_patience, args.final_no_mosaic_epochs
+        )
         train_result = model.train(resume=True)
     else:
         model = YOLO(args.model)
+        install_final_no_mosaic_phase(
+            model, args.stall_patience, args.final_no_mosaic_epochs
+        )
         options = {
             "data": str(args.data.resolve()),
             "epochs": args.epochs,
-            "patience": 60,
+            # Built-in early stopping is disabled. The callback above uses the same
+            # fitness tracking to enter a final 50-epoch no-mosaic phase after a plateau.
+            "patience": 0,
             "imgsz": args.imgsz,
             "batch": int(args.batch) if args.batch >= 1 else args.batch,
             "workers": args.workers,
@@ -155,7 +234,7 @@ def main() -> None:
             "flipud": 0.2,
             "fliplr": 0.2,
             "mosaic": 0.10,
-            "close_mosaic": 50,
+            "close_mosaic": args.final_no_mosaic_epochs,
             "mixup": 0.0,
             "cutmix": 0.0,
         }
