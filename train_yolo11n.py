@@ -9,10 +9,12 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
-DEFAULT_DATA = ROOT / "data.zip/defect_dataset/merged_xanylabeling/split_811/dataset.yaml"
+DEFAULT_DATA = ROOT / "data.zip-new/data/xanylabeling_merged/dataset.yaml"
 DEFAULT_PROJECT = ROOT / "runs_defects"
 FINAL_MODEL_DIR = ROOT / "models"
 AUGMENTATION_RE = re.compile(r"_(r90|r180|r270|g0\.6|g1\.6)$", re.IGNORECASE)
+CLASS_NAMES = ("hole", "notch", "scratch", "stain")
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -48,6 +50,91 @@ def group_name(stem: str) -> str:
     return AUGMENTATION_RE.sub("", stem)
 
 
+def prepare_xanylabeling_dataset(data_yaml: Path) -> tuple[Path, dict[str, int]]:
+    """Create YOLO TXT sidecars for the merged XAnyLabeling dataset."""
+    data_yaml = data_yaml.resolve()
+    dataset_root = data_yaml.parent
+    split_dirs = {split: dataset_root / split for split in ("train", "val", "test")}
+    is_xanylabeling_dataset = all(path.is_dir() for path in split_dirs.values()) and any(
+        split_dirs["train"].glob("*.json")
+    )
+    if not is_xanylabeling_dataset:
+        return data_yaml, {"images": 0, "labels_created": 0, "labels_updated": 0}
+
+    class_ids = {name: index for index, name in enumerate(CLASS_NAMES)}
+    report = {"images": 0, "labels_created": 0, "labels_updated": 0}
+    for split, split_dir in split_dirs.items():
+        images = sorted(
+            path
+            for path in split_dir.iterdir()
+            if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
+        )
+        if not images:
+            raise ValueError(f"No images found in XAnyLabeling {split} split: {split_dir}")
+        for image in images:
+            annotation = image.with_suffix(".json")
+            if not annotation.is_file():
+                raise FileNotFoundError(f"Missing XAnyLabeling annotation: {annotation}")
+            document = json.loads(annotation.read_text(encoding="utf-8-sig"))
+            width = int(document.get("imageWidth", 0))
+            height = int(document.get("imageHeight", 0))
+            if width <= 0 or height <= 0 or document.get("imagePath") != image.name:
+                raise ValueError(f"Invalid image metadata: {annotation}")
+
+            rows: list[str] = []
+            shapes = document.get("shapes")
+            if not isinstance(shapes, list):
+                raise ValueError(f"shapes is not a list: {annotation}")
+            for index, shape in enumerate(shapes, start=1):
+                label = shape.get("label")
+                if label not in class_ids:
+                    raise ValueError(f"Unknown label {label}: {annotation}:shape {index}")
+                if shape.get("shape_type") != "rectangle":
+                    raise ValueError(f"Expected rectangle: {annotation}:shape {index}")
+                points = shape.get("points")
+                if not isinstance(points, list) or len(points) < 2:
+                    raise ValueError(f"Invalid rectangle points: {annotation}:shape {index}")
+                xs = [float(point[0]) for point in points]
+                ys = [float(point[1]) for point in points]
+                left, right = min(xs), max(xs)
+                top, bottom = min(ys), max(ys)
+                if not (0.0 <= left < right <= width and 0.0 <= top < bottom <= height):
+                    raise ValueError(f"Rectangle outside image: {annotation}:shape {index}")
+                x_center = (left + right) / (2.0 * width)
+                y_center = (top + bottom) / (2.0 * height)
+                box_width = (right - left) / width
+                box_height = (bottom - top) / height
+                rows.append(
+                    f"{class_ids[label]} {x_center:.8f} {y_center:.8f} "
+                    f"{box_width:.8f} {box_height:.8f}"
+                )
+
+            yolo_label = image.with_suffix(".txt")
+            content = "\n".join(rows) + ("\n" if rows else "")
+            existed = yolo_label.exists()
+            if not existed or yolo_label.read_text(encoding="utf-8-sig") != content:
+                yolo_label.write_text(content, encoding="utf-8", newline="\n")
+                key = "labels_updated" if existed else "labels_created"
+                report[key] += 1
+            report["images"] += 1
+
+    yaml_text = (
+        f"path: {dataset_root.as_posix()}\n"
+        "train: train\n"
+        "val: val\n"
+        "test: test\n"
+        "nc: 4\n"
+        "names:\n"
+        "  0: hole\n"
+        "  1: notch\n"
+        "  2: scratch\n"
+        "  3: stain\n"
+    )
+    if not data_yaml.exists() or data_yaml.read_text(encoding="utf-8-sig") != yaml_text:
+        data_yaml.write_text(yaml_text, encoding="utf-8", newline="\n")
+    return data_yaml, report
+
+
 def validate_dataset(data_yaml: Path) -> dict[str, object]:
     import yaml
 
@@ -55,7 +142,7 @@ def validate_dataset(data_yaml: Path) -> dict[str, object]:
     if not data_yaml.is_file():
         raise FileNotFoundError(f"Dataset YAML not found: {data_yaml}")
     config = yaml.safe_load(data_yaml.read_text(encoding="utf-8-sig"))
-    expected_names = {0: "hole", 1: "notch", 2: "scratch", 3: "stain"}
+    expected_names = dict(enumerate(CLASS_NAMES))
     raw_names = config.get("names")
     names = (
         {int(key): value for key, value in raw_names.items()}
@@ -73,18 +160,24 @@ def validate_dataset(data_yaml: Path) -> dict[str, object]:
 
     split_groups: dict[str, set[str]] = {}
     report: dict[str, object] = {"dataset": str(data_yaml), "splits": {}}
-    image_suffixes = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
     for split in ("train", "val", "test"):
         image_dir = dataset_root / config[split]
         label_dir = image_dir.parent / "labels"
-        images = sorted(path for path in image_dir.iterdir() if path.suffix.lower() in image_suffixes)
+        images = sorted(
+            path for path in image_dir.iterdir() if path.suffix.lower() in IMAGE_SUFFIXES
+        )
         class_counts: Counter[int] = Counter()
         groups: set[str] = set()
         for image in images:
             groups.add(group_name(image.stem))
             if split in {"val", "test"} and AUGMENTATION_RE.search(image.stem):
                 raise ValueError(f"Augmented image is not allowed in {split}: {image.name}")
-            label = label_dir / f"{image.stem}.txt"
+            adjacent_label = image.with_suffix(".txt")
+            label = (
+                adjacent_label
+                if adjacent_label.is_file()
+                else label_dir / f"{image.stem}.txt"
+            )
             if not label.is_file():
                 raise FileNotFoundError(f"Missing label: {label}")
             for line_number, line in enumerate(label.read_text(encoding="utf-8-sig").splitlines(), 1):
@@ -177,7 +270,9 @@ def install_final_no_mosaic_phase(
 
 def main() -> None:
     args = parse_args()
+    args.data, export_report = prepare_xanylabeling_dataset(args.data)
     dataset_report = validate_dataset(args.data)
+    dataset_report["xanylabeling_export"] = export_report
     print(json.dumps(dataset_report, ensure_ascii=False, indent=2))
 
     from ultralytics import YOLO
