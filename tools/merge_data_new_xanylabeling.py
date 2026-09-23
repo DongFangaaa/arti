@@ -21,14 +21,14 @@ CANONICAL_CLASS_ORDER = ("hole", "notch", "scratch", "stain")
 IMAGE_SUFFIXES = {".bmp", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp"}
 SPLITS = ("train", "val", "test")
 SOURCE_DATASETS = (
-    ("v2", "yolo_dataset_v2"),
-    ("v3", "yolo_dataset_v3"),
+    ("v2", "yolo_dataset_v2", "pixel_json"),
+    ("v3", "yolo_dataset_v3", "yolo_txt"),
 )
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Merge data-new v2/v3 and convert YOLO boxes to XAnyLabeling JSON."
+        description="Merge v2/v3 datasets and convert their boxes to XAnyLabeling JSON."
     )
     parser.add_argument(
         "--root",
@@ -57,6 +57,32 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def rectangle_shape(
+    label: str,
+    left: float,
+    top: float,
+    right: float,
+    bottom: float,
+) -> dict[str, Any]:
+    return {
+        "label": label,
+        "score": None,
+        "points": [
+            [left, top],
+            [right, top],
+            [right, bottom],
+            [left, bottom],
+        ],
+        "group_id": None,
+        "description": "",
+        "difficult": False,
+        "shape_type": "rectangle",
+        "flags": {},
+        "attributes": {},
+        "kie_linking": [],
+    }
 
 
 def parse_yolo_label(label_path: Path, width: int, height: int) -> list[dict[str, Any]]:
@@ -95,24 +121,40 @@ def parse_yolo_label(label_path: Path, width: int, height: int) -> list[dict[str
             raise ValueError(f"Collapsed box: {label_path}:{line_number}")
 
         shapes.append(
-            {
-                "label": SOURCE_CLASS_NAMES[class_id],
-                "score": None,
-                "points": [
-                    [left, top],
-                    [right, top],
-                    [right, bottom],
-                    [left, bottom],
-                ],
-                "group_id": None,
-                "description": "",
-                "difficult": False,
-                "shape_type": "rectangle",
-                "flags": {},
-                "attributes": {},
-                "kie_linking": [],
-            }
+            rectangle_shape(SOURCE_CLASS_NAMES[class_id], left, top, right, bottom)
         )
+    return shapes
+
+
+def parse_pixel_json_label(label_path: Path, width: int, height: int) -> list[dict[str, Any]]:
+    document = json.loads(label_path.read_text(encoding="utf-8-sig"))
+    if document.get("width") != width or document.get("height") != height:
+        raise ValueError(
+            f"Image dimension mismatch: {label_path}: "
+            f"label={document.get('width')}x{document.get('height')} image={width}x{height}"
+        )
+    labels = document.get("labels")
+    if not isinstance(labels, list):
+        raise ValueError(f"labels is not a list: {label_path}")
+
+    shapes: list[dict[str, Any]] = []
+    for index, label in enumerate(labels, start=1):
+        class_id = label.get("class_id")
+        class_name = label.get("class_name")
+        if class_id not in SOURCE_CLASS_NAMES:
+            raise ValueError(f"Unknown class {class_id}: {label_path}:label {index}")
+        if class_name != SOURCE_CLASS_NAMES[class_id]:
+            raise ValueError(
+                f"Class ID/name mismatch: {label_path}:label {index}: "
+                f"id={class_id}, name={class_name}"
+            )
+        bbox = label.get("bbox_xyxy")
+        if not isinstance(bbox, list) or len(bbox) != 4:
+            raise ValueError(f"Invalid bbox_xyxy: {label_path}:label {index}")
+        left, top, right, bottom = map(float, bbox)
+        if not (0.0 <= left < right <= width and 0.0 <= top < bottom <= height):
+            raise ValueError(f"Box outside image: {label_path}:label {index}: {bbox}")
+        shapes.append(rectangle_shape(class_name, left, top, right, bottom))
     return shapes
 
 
@@ -152,7 +194,7 @@ def convert_dataset(root: Path, temp_output: Path) -> tuple[list[dict[str, Any]]
     for split in SPLITS:
         (temp_output / split).mkdir(parents=True, exist_ok=False)
 
-    for prefix, folder_name in SOURCE_DATASETS:
+    for prefix, folder_name, label_format in SOURCE_DATASETS:
         dataset_root = (root / folder_name).resolve()
         if dataset_root.parent != root or not dataset_root.is_dir():
             raise FileNotFoundError(f"Missing source dataset: {dataset_root}")
@@ -169,11 +211,15 @@ def convert_dataset(root: Path, temp_output: Path) -> tuple[list[dict[str, Any]]
                 raise ValueError(f"No images found: {images_dir}")
 
             for source_image in source_images:
-                source_label = labels_dir / f"{source_image.stem}.txt"
+                label_suffix = ".json" if label_format == "pixel_json" else ".txt"
+                source_label = labels_dir / f"{source_image.stem}{label_suffix}"
                 if not source_label.is_file():
                     raise FileNotFoundError(f"Missing label: {source_label}")
                 width, height = image_size(source_image)
-                shapes = parse_yolo_label(source_label, width, height)
+                if label_format == "pixel_json":
+                    shapes = parse_pixel_json_label(source_label, width, height)
+                else:
+                    shapes = parse_yolo_label(source_label, width, height)
                 output_name = f"{prefix}_{source_image.name}"
                 output_image = temp_output / split / output_name
                 output_json = output_image.with_suffix(".json")
@@ -206,15 +252,13 @@ def convert_dataset(root: Path, temp_output: Path) -> tuple[list[dict[str, Any]]
                     }
                 )
 
-    # These six BMP files are one real acquisition group. Keep all of them in train
-    # so near-identical exposures do not leak into validation or test.
+    # Optional root-level unannotated images are kept together in train so one
+    # correlated acquisition group cannot leak into validation or test.
     negative_images = sorted(
         path
         for path in root.iterdir()
         if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
     )
-    if not negative_images:
-        raise ValueError(f"No root-level unannotated negative images found in {root}")
     for source_image in negative_images:
         width, height = image_size(source_image)
         output_name = f"negative_{source_image.name}"
@@ -252,6 +296,9 @@ def convert_dataset(root: Path, temp_output: Path) -> tuple[list[dict[str, Any]]
         "format": "XAnyLabeling JSON rectangles",
         "class_names": list(CANONICAL_CLASS_ORDER),
         "source_class_id_map": SOURCE_CLASS_NAMES,
+        "source_label_formats": {
+            folder_name: label_format for _, folder_name, label_format in SOURCE_DATASETS
+        },
         "recommended_export_class_order": list(CANONICAL_CLASS_ORDER),
         "image_counts": dict(image_counts),
         "total_images": sum(image_counts.values()),
@@ -262,8 +309,10 @@ def convert_dataset(root: Path, temp_output: Path) -> tuple[list[dict[str, Any]]
         "exact_duplicate_groups": len(duplicate_groups),
         "cross_split_exact_duplicate_groups": len(cross_split_duplicates),
         "negative_policy": (
-            "All root-level unannotated BMP images are kept together in train because "
+            "All root-level unannotated images are kept together in train because "
             "they are one correlated acquisition group."
+            if negative_images
+            else "No root-level unannotated negative images were present."
         ),
     }
     return records, summary
@@ -369,7 +418,7 @@ def write_metadata(
     total = summary["total_images"]
     image_counts = summary["image_counts"]
     class_counts = summary["class_box_counts"]
-    report = f"""# data-new 合并与数据质量审计
+    report = f"""# v2/v3 合并与数据质量审计
 
 ## 合并结果
 
@@ -398,7 +447,7 @@ def write_metadata(
 - v2 notch 偏大，v3 notch 偏小，合并后尺寸覆盖更好，但仍需检查真实设备上的缺口尺寸范围。
 - 80/10/10 的数量比例合理，但v2和v3各自由单一底图生成，训练、验证和测试共享背景风格，内容独立性不足，测试指标可能明显偏高。
 - 现有正样本全部是单缺陷图，没有多缺陷共存样本；若现场可能同时出现多种缺陷，应加入多缺陷图片。
-- 六张无标注BMP来自同一采集批次，已全部作为负样本加入训练集，避免拆分到验证/测试造成近重复泄漏；负样本数量仍明显不足。
+- 根目录无标注图片统一放入训练集，避免同批次近重复图泄漏；若本次没有此类图片，则该数据集完全没有负样本。
 
 ## 后续建议
 
@@ -412,7 +461,7 @@ def write_metadata(
 
 def delete_source_masks(root: Path) -> list[str]:
     deleted: list[str] = []
-    for _, folder_name in SOURCE_DATASETS:
+    for _, folder_name, _ in SOURCE_DATASETS:
         dataset_root = (root / folder_name).resolve()
         mask_dir = (dataset_root / "masks").resolve()
         if mask_dir.parent != dataset_root or mask_dir.name != "masks":
@@ -426,8 +475,14 @@ def delete_source_masks(root: Path) -> list[str]:
 def main() -> None:
     args = parse_args()
     root = args.root.expanduser().resolve()
-    if root.name != "data-new" or not root.is_dir():
-        raise ValueError(f"Expected an existing data-new directory, got: {root}")
+    if not root.is_dir():
+        raise ValueError(f"Expected an existing dataset directory, got: {root}")
+    missing_sources = [
+        folder_name for _, folder_name, _ in SOURCE_DATASETS
+        if not (root / folder_name).is_dir()
+    ]
+    if missing_sources:
+        raise FileNotFoundError(f"Missing source datasets under {root}: {missing_sources}")
     output = (root / args.output_name).resolve()
     temp_output = (root / f"{args.output_name}.tmp").resolve()
     if output.parent != root or temp_output.parent != root:
